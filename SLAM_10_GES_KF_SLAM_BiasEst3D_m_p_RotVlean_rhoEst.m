@@ -85,7 +85,7 @@ p_n_old=p_n_0;
 nu=nu_0;
 omega_bib=omega_0;
 
-bias=[0.8 0.1 -0.5]';
+bias=[0.8 0.1 -0.5]'*0.1;
 
  
 
@@ -252,10 +252,10 @@ for i=0:h:time_end
     
     %% Bias Estimator 
     sigma_b=0;
-    k_l=20;
-    k_b=20;
+    k_l=10;
+    k_b=10;
     k_lib=1/m_p;
-    k_d=20;
+    k_d=10;
     %      b_hat=[0 0 1]'; % just for testing
     
     for n=1:m_p

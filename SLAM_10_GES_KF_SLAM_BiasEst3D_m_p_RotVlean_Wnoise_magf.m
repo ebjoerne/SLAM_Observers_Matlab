@@ -47,8 +47,8 @@ PP(3*i-2:3*i,1)=[rand*50 rand*50 rand*50]'-[25 25 25]';
 end
 
 
-time_end=10000;
-h=0.1; 
+time_end=1000;
+h=0.2; 
 
 Delta=PP-kron(ones(m_p,1),p_n);
 
