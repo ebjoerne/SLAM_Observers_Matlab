@@ -43,12 +43,12 @@ m_p=4;
 PP=zeros(m_p*3,1);
 
 for i=1:m_p
-PP(3*i-2:3*i,1)=[rand*50 rand*50 rand*50]'-[25 25 25]';
+PP(3*i-2:3*i,1)=[rand*50*5 rand*50*5 rand*50*5]'-[25 25 25]'*5;
 end
 
 
-time_end=1000;
-h=0.1; 
+time_end=500;
+h=0.05; 
 
 Delta=PP-kron(ones(m_p,1),p_n);
 
@@ -57,7 +57,7 @@ sigma_nudot=0.01*0;
 sigma_omega=0.001;
 
 L_hat=zeros(3*m_p,1);
-Q_hat=ones(m_p,1)*1;%000;
+Q_hat=ones(m_p,1)*500;
 b_hat=zeros(3,1);
 % b_hat=[3 2.2 1]';
 L_hat_dot_old=zeros(3*m_p,1);
@@ -179,9 +179,9 @@ time=0:h:time_end;
   
   %%
   
-  rho=pi/2;
-  theta=pi*3/4;
-  psi=pi*2/3;
+  rho=pi/2*0.1;
+  theta=pi*3/4*0.1;
+  psi=pi*2/3*0.1;
   R_x=[1 0 0;0 cos(rho) -sin(rho); 0 sin(rho) cos(rho)];
 R_y=[cos(theta) 0 sin(theta); 0 1 0; -sin(theta) 0 cos(theta) ];
 R_z=[cos(psi) -sin(psi) 0;sin(psi) cos(psi) 0; 0 0 1];
@@ -252,10 +252,10 @@ for i=0:h:time_end
     
     %% Bias Estimator 
     sigma_b=0;
-    k_l=10;
-    k_b=10;
+    k_l=1;
+    k_b=1.5;
     k_lib=1/m_p;
-    k_d=10;
+    k_d=1.5;
     %      b_hat=[0 0 1]'; % just for testing
     
     for n=1:m_p
