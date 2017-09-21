@@ -38,7 +38,7 @@ omega_0=[0;
 %    [-20,0,0]'];
 % m_p=length(PP)/3;
 p_n=p_n_0;
-m_p=3;
+m_p=4;
 
 PP=zeros(m_p*3,1);
 
@@ -89,7 +89,7 @@ nu=nu_0;
 omega_bib=omega_0;
 
 % bias=[1.5 2 1]';
-bias=[0.8 0.1 -0.5]'*2;
+bias=[0.8 0.1 -0.5]';
 
 
  

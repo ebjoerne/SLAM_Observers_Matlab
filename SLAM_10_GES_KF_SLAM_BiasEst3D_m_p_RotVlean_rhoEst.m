@@ -4,9 +4,9 @@ clear all
 % close all
 addpath Functions
 
-u_d=2;
+u_d=0.1;
 
-x_0=0;
+x_0=3;
 y_0=0;
 z_0=0;
 
@@ -25,7 +25,7 @@ nu_0=[u_0;
       v_0;
       w_0];
   
-r_0=u_d/75;
+r_0=u_d/7.5;
 
 omega_0=[0;
          0;
@@ -38,12 +38,12 @@ omega_0=[0;
 %    [-20,0,0]'];
 % m_p=length(PP)/3;
 p_n=p_n_0;
-m_p=4;
+m_p=10;
 
 PP=zeros(m_p*3,1);
 
 for i=1:m_p
-PP(3*i-2:3*i,1)=[rand*50*5 rand*50*5 rand*50*5]'-[25 25 25]'*5;
+PP(3*i-2:3*i,1)=[rand*50 rand*50 0]'-[25 25 0]';
 end
 
 
@@ -252,10 +252,10 @@ for i=0:h:time_end
     
     %% Bias Estimator 
     sigma_b=0;
-    k_l=1;
-    k_b=1.5;
+    k_l=5;
+    k_b=15;
     k_lib=1/m_p;
-    k_d=1.5;
+    k_d=15;
     %      b_hat=[0 0 1]'; % just for testing
     
     for n=1:m_p
