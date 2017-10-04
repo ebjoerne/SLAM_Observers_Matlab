@@ -13,6 +13,7 @@ leg=['Comp';'SLAM';'True'];
 Plot=0;
 video_rec=1;
 noise=0;
+Just_yaw=1;
 
 sigma_Li=0.01*0;
 sigma_nudot=0.01*0;
@@ -145,9 +146,9 @@ k=k+1;
     end
     
     %Estimating LOS and inverce range
-    k_l=5;
-    k_d=15;
-    k_b=15;
+    k_l=15;
+    k_d=10;
+    k_b=10;
     k_lib=1/length(Index_M);
     l=0;
     sigma_b=0;
@@ -155,9 +156,9 @@ k=k+1;
     if(k>3)
         g_m
         g_hat
-        sigma_g=S(g_m)*g_hat*1
+        sigma_g=S(g_m)*g_hat*2
         b_hat
-        sigma_b=sigma_b+sigma_g*1;
+        sigma_b=sigma_b+S(g_m)*g_hat*1;
         g_hat_dot=-S(omega_m-b_hat+sigma_g)*g_hat;
         g_hat_new=intEuler(g_hat_dot,g_hat,h);
         g_hat=g_hat_new/norm(g_hat_new);
@@ -190,7 +191,7 @@ k=k+1;
             % estimation
             if((sigma_conv==0 || Converge_Counter(j)<=0))
             %  sigma_b=sigma_b-S(l_hat)*S(l_m)*S(l_m)*l_hat*k_lib*0+S(l_m')*l_hat;
-              sigma_b=sigma_b+S(S(g_m)*l_m)*S(g_m)*l_hat;
+              sigma_b=sigma_b+S(S(g_m)*l_m)*S(g_m)*l_hat*Just_yaw+(1-Just_yaw)*S(l_m)*l_hat;
               
               if (sigma_conv==0)
                     Converge_Counter(j)=0;

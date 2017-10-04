@@ -4,22 +4,26 @@ clc
 clear all
 addpath Functions
 
-
-time_end=10;
+time_end=1000;
 h=0.0125;
 k_max=time_end/h;
 floorAndSealing=0;
+comp_filter=0;
 
 leg=['Comp';'SLAM';'True'];
 Plot=0;
+video_rec=1;
 noise=0;
-Just_yaw=1;
+Just_yaw=0;
 Just_yaw_cel=0;
 
 sigma_Li=0.01*0;
 sigma_nudot=0.01*0;
 sigma_omega=0.001;
+sigma_compas=0.1;
+sigma_Icompass=0.01;
 
+compInoise=zeros(3,1);
 
 
 
@@ -31,6 +35,7 @@ max_estimates=10;% (can be 100)
 STORE_P_N=zeros(1,3,k_max);
 STORE_P_HAT=zeros(1,3,k_max);
 STORE_V_B=zeros(1,3,k_max);
+STORE_V_N=zeros(1,3,k_max);
 STORE_PSI=zeros(1,3,k_max);
 STORE_PSI_HAT=zeros(1,3,k_max);
 
@@ -42,7 +47,9 @@ STORE_B_HAT=zeros(1,3,k_max);
 STORE_OMEGA_BIB=zeros(1,3,k_max);
 STORE_OMEGA_M=zeros(1,3,k_max);
 
-
+STORE_A_N=zeros(1,3,k_max);
+STORE_VEL=zeros(1,3,k_max);
+STORE_LAMBDA=zeros(1,1,k_max);
 
 
 %starting states point in NED
@@ -53,7 +60,7 @@ omega_0=[0 , 0, 0.1/7.5]';
 R_nb_0=eye(3);
 R_bc=[0 0 -1; 0 1 0;1 0 0];
 compas_n=[1 0 0]';
-g=[0 0 1]';
+g_n=[0 0 9.81]';
 b_true=[0.8 0.1 -0.5]';
 
 % Estimates Initialization
@@ -67,23 +74,38 @@ R_nb_hat=R_z*R_y*R_x;
  R2Euler=@(Rot)([atan2(Rot(3,2),Rot(3,3));atan2(-Rot(3,1),sqrt(Rot(3,2)*Rot(3,2)+Rot(3,3)*Rot(3,3)));atan2(Rot(2,1),Rot(1,1))]);
  S=@(nu)([0 -nu(3) nu(2);   nu(3) 0 -nu(1);   -nu(2) nu(1) 0]);
 
-
 %Creating map
 N=1500;
 PP=[-25+50*rand(N,1), -25+50*rand(N,1) ,-4*(rand(N,1) < 0.5)*floorAndSealing];
 
-Convergance_iterations=400; % How many iterations before we are confident on convergance
+Convergance_iterations=50; % How many iterations before we are confident on convergance
 
 L_HAT=zeros(N,3);
 D_HAT=ones(N,1)*0.1;
 b_hat=zeros(1,3)';
 Converge_Counter=Convergance_iterations*ones(N,1);
 sigma_conv=0;
+sigma_b_comp=0;
+if (video_rec==1)
+    framerat_hz=5;
+    K_mov=1/h*framerat_hz;
+    Movie(k_max/K_mov) = struct('cdata',[],'colormap',[]);
+    mov_counter=0;
+end
+
+x_vel_hat=zeros(7,1); % X_vel_hat=[a^n, v^n, lambda_vel]
+P_vel_0=eye(7,7);
+P_vel=P_vel_0;
+
+R_vel=eye(6,6)*0.1;
+Q_vel=eye(7,7)*1;
 
 k=0;
 p_n=p_n_0; p_n_old=p_n_0;
 v_b=v_b_0;
 R_nb=R_nb_0;
+
+
 
 Index_M=[];
 Index_C=[];
@@ -110,7 +132,11 @@ k=k+1;
     Somega_m=R_nb'*R_nb_dot;
     
     omega_m=[Somega_m(3,2) Somega_m(1,3) Somega_m(2,1)]'+b_true+sigma_omega*randn(3,1)*noise;
-    g_m=R_nb'*(g+f)/norm(g+f);
+    g_m=R_nb'*(g_n+f)/norm(g_n+f);
+    f_m=R_nb'*(g_n+f);
+    compInoise=compInoise*0.99+sigma_Icompass*randn(3,1);
+    compas_m=R_nb'*compas_n+compInoise*0+sigma_compas*0;
+    compas_m=compas_m/norm(compas_m);
     
     v_b_dot=[0;0;0];
     v_b_dot=sigma_nudot*randn(3,1);
@@ -118,6 +144,7 @@ k=k+1;
     
     STORE_P_N(:,:,k)=p_n';
     STORE_V_B(:,:,k)=v_b';
+    STORE_V_N(:,:,k)=v';
     STORE_PSI(:,:,k)=Euler_m;
     STORE_OMEGA_BIB(:,:,k)=omega_m'-b_true';
     STORE_OMEGA_M(:,:,k)=omega_m;
@@ -148,9 +175,9 @@ k=k+1;
     sigma_b=0;
     
     if(k>3)
-        g_m
-        g_hat
-        sigma_g=S(g_m)*g_hat*2
+%         g_m
+%         g_hat
+        sigma_g=S(g_m)*g_hat*2;
         b_hat
         sigma_b=sigma_b+S(g_m)*g_hat*1;
         g_hat_dot=-S(omega_m-b_hat+sigma_g)*g_hat;
@@ -171,7 +198,7 @@ k=k+1;
         if (norm(L_HAT(j,:))==0 || L_HAT(j,:)*LOS_mesurments(l,:)'<0.97*0)
             L_HAT(j,:)=LOS_mesurments(l,:);
             D_HAT(j)=mean(D_HAT(Index_M))*0+0.1;
-%             D_HAT(j)=1/rho_measurments(l);
+             D_HAT(j)=1/rho_measurments(l);
         else
             l_m=LOS_mesurments(l,:)';
             l_hat=L_HAT(j,:)';
@@ -224,9 +251,111 @@ k=k+1;
             Just_yaw_cel=1;
         end
     end
-    b_hat_dot=-sigma_b*k_b;
+    b_hat_dot=-sigma_b*k_b*(1-comp_filter)-sigma_b_comp*k_b*comp_filter;
     b_hat=intEuler(b_hat_dot,b_hat,h);
     STORE_B_HAT(:,:,k)=b_hat';
+    
+    
+    %% Attitude observer
+   k_1=0.5;  v_n_1=g_n/norm(g_n);               v_b_1=g_m;
+   k_2=0.5*0.3;   v_n_2=compas_n;          v_b_2=compas_m;
+   k_3=0.3*0.1*0;   v_n_3=S(v_n_1)*v_n_2;    v_b_3=S(v_b_1)*v_b_2;
+
+    
+    sigma_r=k_1*S(v_b_1)*R_nb_hat'*v_n_1+k_2*S(v_b_2)*R_nb_hat'*v_n_2*0+k_3*S(v_b_3)*R_nb_hat'*v_n_3*0;
+    sigma_r;
+    R_nb_dot=R_nb_hat*S(omega_m-b_hat+sigma_r);
+    R_nb_hat_new=intEuler(R_nb_dot,R_nb_hat,h);
+    if (k==5000)
+        R_nb_hat_new=R_nb;
+    end
+    
+   sigma_b_comp=k_1*S(v_b_1)*R_nb_hat'*v_n_1+k_2*S(v_b_2)*R_nb_hat'*v_n_2+k_3*S(v_b_3)*R_nb_hat'*v_n_3;
+    %% Algorithm for orthogonalizing the rotation matrix
+    r_1_bar=R_nb_hat_new(:,1)/norm(R_nb_hat_new(:,1));
+    r_2_bar=(eye(3)-r_1_bar*r_1_bar')*R_nb_hat_new(:,2);
+    r_2_bar=r_2_bar/norm(r_2_bar);
+    r_3_bar=S(r_1_bar)*r_2_bar;
+    
+    R_nb_hat=[r_1_bar r_2_bar r_3_bar];
+    [U,LAMBDA,V]=svd(R_nb_hat_new);
+    R_nb_hat=U*V'; %%%%%%%%%% keeping orthogonal
+    STORE_PSI_HAT(:,:,k)=R2Euler(R_nb_hat);
+    STORE_PSI(:,:,k)=R2Euler(R_nb);
+    
+    
+    %% Velocity scaling estimator
+    if (norm(v)<10^-5)
+        v_n_bar=[0 0 0]';
+    else
+            v_n_bar=v/norm(v);
+    end
+%         a_n_m=R_nb*g_m-
+    if(k>3) 
+        a_n_m=f;
+    else
+        a_n_m=zeros(3,1);
+    end
+    
+    % Estimation update
+    A_vel=zeros(7,7); A_vel(4:6,1:3)=eye(3); A_vel(7,1:3)=v_n_bar';
+    A_vel_d=eye(7,7)+h*A_vel;
+    C_vel=zeros(6,7); C_vel(1:3,1:3)=eye(3); C_vel(4:6,4:6)=eye(3); C_vel(4:6,7)=-v_n_bar;
+    C_vel_d=C_vel;
+    % B_vel=0;
+    y_m=[R_nb*f_m-g_n;zeros(3,1)];
+    y_hat=C_vel*x_vel_hat;
+    y_tilde=y_m-y_hat;
+    
+    S0 = C_vel*P_vel*C_vel' + R_vel;
+    K_vel = P_vel*C_vel'*(S0\eye(6,6));
+    dx=h*K_vel*y_tilde;
+    
+    x_vel_hat=x_vel_hat+dx;
+    P_vel=(eye(7,7)-K_vel*C_vel)*P_vel;    
+    
+    STORE_A_N(:,:,k)=x_vel_hat(1:3)';
+    STORE_VEL(:,:,k)=x_vel_hat(4:6)';
+    STORE_LAMBDA(:,:,k)=x_vel_hat(7)';
+    
+    
+    % Propagation
+    x_vel_hat=A_vel_d*x_vel_hat;
+    P_vel=A_vel_d*P_vel*A_vel_d'+Q_vel;
+    
+    
+    
+    
+    %% Video Storage
+    if (video_rec==1)
+    if (mod(k,K_mov)==0)
+        mov_counter=mov_counter+1;
+        [Index_M, LOS_mesurments, rho_measurments]=Cameramodel(p_n,R_nb,PP);
+        STORE_P_N_t=squeeze(STORE_P_N(:,:,1:k));
+        figure(1)
+        plot3(STORE_P_N_t(1,:)',STORE_P_N_t(2,:)',-STORE_P_N_t(3,:)')
+        hold on 
+        scatter3(PP(:,1),PP(:,2),-PP(:,3),'y.')
+        scatter3(PP(Index_M,1),PP(Index_M,2),-PP(Index_M,3),'r')
+        scatter3(p_n(1),p_n(2),-p_n(3),'rx')
+        axis equal
+        nn=length(Index_M);
+
+        LOS_mesurments_n=R_nb*LOS_mesurments';
+        LOS_mesurments_n=LOS_mesurments_n';
+        
+%         D_HAT(find(D_HAT<0.05))=10;
+         D_hat_temp=D_HAT(Index_M);
+          D_hat_temp(find(D_hat_temp<0.1))=10;
+        
+         quiver3(ones(nn,1)*p_n(1),ones(nn,1)*p_n(2),-ones(nn,1)*p_n(3),LOS_mesurments_n(:,1).*1./D_hat_temp,LOS_mesurments_n(:,2).*1./D_hat_temp,-LOS_mesurments_n(:,3).*1./D_hat_temp)
+%         quiver3(ones(nn,1)*p_n(1),ones(nn,1)*p_n(2),-ones(nn,1)*p_n(3),LOS_mesurments_n(:,1).*rho_measurments,LOS_mesurments_n(:,2).*rho_measurments,-LOS_mesurments_n(:,3).*rho_measurments)
+
+        drawnow
+        Movie(mov_counter)=getframe;
+        hold off 
+    end
+    end
 end
 
 
@@ -256,9 +385,18 @@ quiver3(ones(nn,1)*p_n(1),ones(nn,1)*p_n(2),-ones(nn,1)*p_n(3),LOS_mesurments_n(
 figure(2) 
 plot(squeeze(STORE_B_HAT)')
 
+figure(3)
+plot(squeeze(STORE_PSI)')
+hold on
+plot(squeeze(STORE_PSI_HAT)','--')
 
+figure(4)
 
-
+%%
+plot(squeeze(STORE_VEL)','--')
+hold on
+plot(squeeze(STORE_V_N)','-r')
+% movie(Movie,2)
 
 
 

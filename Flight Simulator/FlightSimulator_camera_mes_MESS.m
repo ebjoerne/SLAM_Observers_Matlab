@@ -4,17 +4,17 @@ clc
 clear all
 addpath Functions
 
-time_end=500;
-h=0.0125;
+time_end=1000;
+h=0.0250;
 k_max=time_end/h;
-floorAndSealing=1;
+floorAndSealing=0;
 comp_filter=0;
 
 leg=['Comp';'SLAM';'True'];
 Plot=0;
-video_rec=0;
+video_rec=1;
 noise=0;
-Just_yaw=0;
+Just_yaw=1;
 Just_yaw_cel=0;
 
 sigma_Li=0.01*0;
@@ -76,12 +76,13 @@ R_nb_hat=R_z*R_y*R_x;
  S=@(nu)([0 -nu(3) nu(2);   nu(3) 0 -nu(1);   -nu(2) nu(1) 0]);
 
 %Creating map
-N=1500;
+N=3000;
 PP=[-25+50*rand(N,1), -25+50*rand(N,1) ,-4*(rand(N,1) < 0.5)*floorAndSealing];
 
-Convergance_iterations=50; % How many iterations before we are confident on convergance
+Convergance_iterations=25; % How many iterations before we are confident on convergance
 
 L_HAT=zeros(N,3);
+L_M_OLD=zeros(N,3);
 D_HAT=ones(N,1)*0.1;
 b_hat=zeros(1,3)';
 Converge_Counter=Convergance_iterations*ones(N,1);
@@ -95,13 +96,11 @@ if (video_rec==1)
 end
 
 x_vel_hat=zeros(7,1); % X_vel_hat=[a^n, v^n, lambda_vel]
-P_vel_0=eye(7,7)*0.01;
+P_vel_0=eye(7,7);
 P_vel=P_vel_0;
-a_n_hat=[0 0 0]';
 
-R_vel=eye(6,6)*0.05;
-% R_vel(1:3,1:3)=eye(3,3)*1000;
-Q_vel=eye(7,7)*0.05;
+R_vel=eye(6,6)*0.1;
+Q_vel=eye(7,7)*1;
 
 k=0;
 p_n=p_n_0; p_n_old=p_n_0;
@@ -112,6 +111,10 @@ R_nb=R_nb_0;
 
 Index_M=[];
 Index_C=[];
+
+%% Camea parameters
+cameraParams = cameraParameters;
+focal_length=cameraParams.FocalLength;
 
 
 for i=0:h:time_end
@@ -135,8 +138,7 @@ k=k+1;
     Somega_m=R_nb'*R_nb_dot;
     
     omega_m=[Somega_m(3,2) Somega_m(1,3) Somega_m(2,1)]'+b_true+sigma_omega*randn(3,1)*noise;
-    g_m=R_nb'*(g_n+f-a_n_hat)/norm(g_n+f-a_n_hat);
-    g_m=R_nb'*(g_n)/norm(g_n);
+    g_m=R_nb'*(g_n+f)/norm(g_n+f);
     f_m=R_nb'*(g_n+f);
     compInoise=compInoise*0.99+sigma_Icompass*randn(3,1);
     compas_m=R_nb'*compas_n+compInoise*0+sigma_compas*0;
@@ -158,10 +160,12 @@ k=k+1;
     Index_M_old=Index_M;
     [Index_M, LOS_mesurments, rho_measurments]=Cameramodel(p_n,R_nb,PP);
     
-    flag = ~ismember(Index_M_old,Index_M);
-    index = find(flag);
+    flag = ismember(Index_M,Index_M_old);
+    index = find(~flag);
+    index_vel=find(flag);
+    Index_vel=Index_M(index_vel);
     if (~isempty(index)&& k>10)
-        Index_out=Index_M_old(index); % Indecies of features not seen anymore
+        Index_out=Index_M(index); % Indecies of features not seen anymore
         for m=1:length(Index_out)
             r=Index_out(m);
             Converge_Counter(r)=Convergance_iterations;
@@ -170,6 +174,32 @@ k=k+1;
         end
     end
     
+%     [E,inliersIndex,status] = estimateEssentialMatrix(matchedPoints1,matchedPoints2)
+    if(~isempty(index_vel))
+        matchedPoints1=L_M_OLD(Index_vel,1:2)./L_M_OLD(Index_vel,3);
+        matchedPoints2=LOS_mesurments(index_vel,1:2)./LOS_mesurments(index_vel,3);
+        figure(100)
+        hold off
+        plot(matchedPoints1(:,1),matchedPoints1(:,2),'xb')
+        hold on
+        plot(matchedPoints2(:,1),matchedPoints2(:,2),'xr')
+        drawnow
+        H=homography_solve(matchedPoints1',matchedPoints2')
+        H=H./H(3,3);
+        t=[H(1,3) H(2,3) 0];
+        E = estimateEssentialMatrix(matchedPoints1,matchedPoints2,cameraParams);
+        [relativeOrientation,relativeLocation] = relativeCameraPose(E,cameraParams,matchedPoints1,matchedPoints2);
+        camMatrix1 = cameraMatrix(cameraParams,eye(3),[0 0 0]);
+        camMatrix2 = cameraMatrix(cameraParams,relativeOrientation,relativeLocation);
+        worldPoints = triangulate(matchedPoints1,matchedPoints2,camMatrix1,camMatrix2);
+        rho_measurments_cam=sqrt(sum(worldPoints.*worldPoints,2));
+        cam_estimates=(1./rho_measurments_cam)*relativeLocation./h
+        real_estimates=(1./rho_measurments(index_vel))*v_b'
+        cam_estimates./real_estimates
+        v_b'./norm(v_b)
+        relativeLocation./norm(relativeLocation)
+        relativeOrientation
+    end
     %Estimating LOS and inverce range
     k_l=15;
     k_d=10;
@@ -178,7 +208,7 @@ k=k+1;
     l=0;
     sigma_b=0;
     
-    if(k>30000)
+    if(k>3)
 %         g_m
 %         g_hat
         sigma_g=S(g_m)*g_hat*2;
@@ -202,7 +232,8 @@ k=k+1;
         if (norm(L_HAT(j,:))==0 || L_HAT(j,:)*LOS_mesurments(l,:)'<0.97*0)
             L_HAT(j,:)=LOS_mesurments(l,:);
             D_HAT(j)=mean(D_HAT(Index_M))*0+0.1;
-             D_HAT(j)=1/rho_measurments(l);
+            D_HAT(j)=1/rho_measurments(l);
+            L_M_OLD(j,:)=LOS_mesurments(l,:);
         else
             l_m=LOS_mesurments(l,:)';
             l_hat=L_HAT(j,:)';
@@ -245,7 +276,8 @@ k=k+1;
             end
             d_hat_new=intEuler(d_hat_dot,d_hat,h);
             L_HAT(j,:)=L_hat_new';
-            D_HAT(j)=d_hat_new;        
+            D_HAT(j)=d_hat_new;
+            L_M_OLD(j,:)=LOS_mesurments(l,:);
         end    
     end
     
@@ -261,16 +293,16 @@ k=k+1;
     
     
     %% Attitude observer
-   k_1=1;  v_n_1=g_n/norm(g_n);               v_b_1=g_m;
+   k_1=0.5;  v_n_1=g_n/norm(g_n);               v_b_1=g_m;
    k_2=0.5*0.3;   v_n_2=compas_n;          v_b_2=compas_m;
    k_3=0.3*0.1*0;   v_n_3=S(v_n_1)*v_n_2;    v_b_3=S(v_b_1)*v_b_2;
 
     
-    sigma_r=k_1*S(v_b_1)*R_nb_hat'*v_n_1+k_2*S(v_b_2)*R_nb_hat'*v_n_2+k_3*S(v_b_3)*R_nb_hat'*v_n_3;   %%% set to zero for c
+    sigma_r=k_1*S(v_b_1)*R_nb_hat'*v_n_1+k_2*S(v_b_2)*R_nb_hat'*v_n_2*0+k_3*S(v_b_3)*R_nb_hat'*v_n_3*0;
     sigma_r;
     R_nb_dot=R_nb_hat*S(omega_m-b_hat+sigma_r);
     R_nb_hat_new=intEuler(R_nb_dot,R_nb_hat,h);
-    if (k==1000)
+    if (k==5000)
         R_nb_hat_new=R_nb;
     end
     
@@ -289,12 +321,10 @@ k=k+1;
     
     
     %% Velocity scaling estimator
- 
-   if(k>1000) 
     if (norm(v)<10^-5)
         v_n_bar=[0 0 0]';
     else
-            v_n_bar=R_nb_hat*v_b/norm(v);
+            v_n_bar=v/norm(v);
     end
 %         a_n_m=R_nb*g_m-
     if(k>3) 
@@ -309,10 +339,9 @@ k=k+1;
     C_vel=zeros(6,7); C_vel(1:3,1:3)=eye(3); C_vel(4:6,4:6)=eye(3); C_vel(4:6,7)=-v_n_bar;
     C_vel_d=C_vel;
     % B_vel=0;
-    y_m=[R_nb_hat*f_m-g_n;zeros(3,1)];
+    y_m=[R_nb*f_m-g_n;zeros(3,1)];
     y_hat=C_vel*x_vel_hat;
     y_tilde=y_m-y_hat;
-
     
     S0 = C_vel*P_vel*C_vel' + R_vel;
     K_vel = P_vel*C_vel'*(S0\eye(6,6));
@@ -325,13 +354,12 @@ k=k+1;
     STORE_VEL(:,:,k)=x_vel_hat(4:6)';
     STORE_LAMBDA(:,:,k)=x_vel_hat(7)';
     
-    a_n_hat=x_vel_hat(1:3);
     
     % Propagation
     x_vel_hat=A_vel_d*x_vel_hat;
     P_vel=A_vel_d*P_vel*A_vel_d'+Q_vel;
     
-   end  
+    
     
     
     %% Video Storage
